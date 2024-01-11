@@ -550,6 +550,8 @@ for place in ['Santa barbara county, California']:
             self.network = GeoDataFrame(pd.concat([new_network_temp, temp_network]), crs=project_crs)
             self.network['length'] = self.network.length
             self.network = self.network[self.network['length'] > 1]
+
+
     class Roundabout(EnvEntity):
         def __init__(self, network: GeoDataFrame):
             EnvEntity.__init__(self, network)
@@ -788,7 +790,8 @@ for place in ['Santa barbara county, California']:
     new_geometry = 'new_geometry'
     max_values_per_group = lines_to_update.groupby('group')['num_of_lines'].max()
     # Filter rows with the maximum 'num' value for each group
-    result_gdf = lines_to_update[lines_to_update.set_index([group_name, num]).index.isin(list(max_values_per_group.items()))]
+    result_gdf = lines_to_update[
+        lines_to_update.set_index([group_name, num]).index.isin(list(max_values_per_group.items()))]
 
 
     # Custom aggregation function to calculate the average point for each group
