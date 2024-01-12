@@ -1,6 +1,6 @@
 ## Run when initialise the code
 import os
-
+from notebooks.general_functions import *
 import geopandas as gpd
 import osmnx as ox
 from geopandas import GeoDataFrame, GeoSeries
@@ -16,8 +16,6 @@ import warnings
 import pandas as pd
 
 from tqdm import tqdm
-import time
-import pickle
 
 warnings.filterwarnings(action='ignore')
 from momepy import remove_false_nodes, extend_lines
@@ -32,52 +30,20 @@ from math import log2
 
 # Download data from OpenStreetMap, project it, and convert it to a GeoDataFrame. OSMnx automatically resolves topology errors and retrieves only the street-related polylines.
 
-for place in ['Santa barbara county, California']:
+for place in ['Turin']:
     if place == 'Tel Aviv':
         useful_tags_path = ['name:en', 'highway', 'length', 'bearing', 'tunnel', 'junction']
         ox.utils.config(useful_tags_way=useful_tags_path)
-    print(place)
-    data_folder = f'{pjr_loc}/places/{place.replace(",", "_").replace(" ", "_")}'
-    print(f'data folder: {data_folder}')
+    my_preprocessing = Preprocessing(place)
+    data_folder = my_preprocessing.create_folder(is_test=False)
     graph = ox.graph_from_place(place, network_type='all')
     print('finish to download data')
     graph = ox.bearing.add_edge_bearings(graph, precision=1)
     graph_pro = ox.projection.project_graph(graph, to_crs=project_crs)
     io.save_graph_geopackage(graph_pro, filepath=f'{data_folder}/osm_data.gpkg', encoding='utf-8', directed=False)
-    my_gdf = gpd.read_file(f'{data_folder}/osm_data.gpkg', layer='edges')
-    if place == 'Tel Aviv':
-        my_gdf.rename(columns={'name:en': 'name'}, inplace=True)
-    # Identify roundabout elements, if any exist, and store them in a separate DataFrame.
-    is_junction = True if 'junction' in my_gdf.columns else False
-    if is_junction:
-        round_about = my_gdf[my_gdf['junction'].isin(['roundabout', 'circular'])]
-        my_gdf = my_gdf[~((my_gdf['junction'] == 'roundabout') | (my_gdf['junction'] == 'circular'))]
-
-    # Remove additional irrelevant line objects based on values of the OSM 'tunnel' and 'highway' keys.
-    # if 'tunnel' in my_gdf.columns:
-    #     my_gdf = my_gdf[~((my_gdf['tunnel'] == 'building_passage') | (my_gdf['tunnel'] == 'yes'))]
-    to_remove = my_gdf[~((my_gdf['highway'] == 'motorway') | (my_gdf['highway'] == 'trunk') | (
-            my_gdf['highway'] == 'motorway_link') | (my_gdf['highway'] == 'motorway_link') | (
-                                 my_gdf['highway'] == 'trunk_link'))]
-
-    # Eliminate polylines that lack a name and calculate angles ranging from 0 to 180 degrees based on the bearing field.
-    df_pro = to_remove.to_crs(project_crs).dropna(subset=['name'])
-    df_pro = df_pro[df_pro['name'] != '']
-    df_pro['angle'] = df_pro['bearing'].apply(lambda x: x if x < 180 else x - 180)
-    df_pro['length'] = df_pro.length
-
-
-    # Function to convert valid list strings to lists
-    def convert_to_list(s):
-        try:
-            return ast.literal_eval(s)[0]
-        except (ValueError, SyntaxError, TypeError):
-            return s  # Return the original string if conversion fails
-
-
-    # Apply the function to the DataFrame column so polylines with several street names will return the first name and highway type.
-    df_pro['name'] = df_pro['name'].apply(convert_to_list)
-    df_pro['highway'] = df_pro['highway'].apply(convert_to_list)
+    df_pro = my_preprocessing.first_filtering()
+    df_pro.to_file(f'{data_folder}/before_df.shp')
+    print('calculate simplification')
 
 
     # Functions and classes to be utilized - Module 2
@@ -236,7 +202,6 @@ for place in ['Santa barbara county, California']:
     my_groupby = df_pro.groupby('name')
     for_time = len(my_groupby)
     number_of_parallel = 0  # count the number of polylines were refined
-    print('calculate simplification')
     with tqdm(total=for_time) as pbar:  # It is used in order to visualise the progress by progress bar
         for i, street in enumerate(my_groupby):
             res = street[1]  # it holds all the streets
@@ -562,7 +527,7 @@ for place in ['Santa barbara county, California']:
         def __from_roundabout_to_centroid(self):
             # Find the center of each roundabout
             # create polygon around each polygon and union
-            round_about_buffer = round_about.to_crs(project_crs)['geometry'].buffer(cap_style=1, distance=10,
+            round_about_buffer = my_preprocessing.round_about.to_crs(project_crs)['geometry'].buffer(cap_style=1, distance=10,
                                                                                     join_style=1).unary_union
             dic_data = {'name': [], 'geometry': []}
             if round_about_buffer.type == 'Polygon':  # In case we have only one polygon
@@ -659,7 +624,7 @@ for place in ['Santa barbara county, California']:
     obj_intersection.intersection_network()
     obj_intersection.update_names(new_gpd)
     line_name = 'line_name'
-    if is_junction:
+    if my_preprocessing.is_junction:
         print('Update roundabout')
         exist_data = obj_intersection.my_network.reset_index().reset_index(names=line_name)
         my_roundabout = Roundabout(exist_data)
