@@ -193,7 +193,11 @@ for place in ['Turin']:
         dic_final['bearing'].append(data['angle'].mean())
         dic_final['group'].append(group_name)
         dic_final['is_simplified'].append(is_simplified)
-
+        
+    # Function to calculate circular_distance     
+    def circular_distance(angle1, angle2):
+        diff = np.abs(angle1 - angle2) % 180
+        return np.minimum(diff, 180 - diff)
 
     # Initiate dic_final here for @def update_df_with_center_line
     dic_final = {'name': [], 'geometry': [], 'highway': [], 'bearing': [], 'group': [], 'is_simplified': []}
@@ -214,7 +218,17 @@ for place in ['Turin']:
                 _ = res['geometry'].apply(lambda x: update_df_with_center_line(x))
                 continue
             # Use DBSCAN to classify streets based on their angle, and group each class. Outliers could not consider parallel with any street, thus removed
-            res['group'] = DBSCAN(eps=10, min_samples=2).fit(res['angle'].to_numpy().reshape(-1, 1)).labels_
+            angles = res['angles'].to_numpy()
+            # Compute pairwise distances between angles
+            pairwise_distances = np.zeros((len(angles), len(angles)))
+            for i in range(len(angles)):
+                for j in range(len(angles)):
+                    pairwise_distances[i, j] = circular_distance(angles[i], angles[j])
+            # Use DBSCAN 
+            epsilon =10
+            min_samples = 2  # Adjust as needed
+            dbscan = DBSCAN(eps=epsilon, min_samples=min_samples, metric='precomputed')
+            res['group'] = dbscan.fit_predict(pairwise_distances)
             # if all is -1, don't touch the element
             if (res['group'] == -1).all():
                 data = res
